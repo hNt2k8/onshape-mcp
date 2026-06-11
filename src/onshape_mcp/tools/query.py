@@ -34,8 +34,10 @@ def register(mcp: FastMCP, get_client: Callable[[], OnshapeClient]) -> None:
         radiusBetween [min,max]. nearPoint/radiusBetween are in `units`
         (default inches); returned geometry is in METERS.
 
-        WARNING: returned ids are transient — invalidated by ANY mutation.
-        Re-run find_entities after every modeling call; never cache ids."""
+        Returned lengths (radius/origin/midpoint/center) are converted to
+        `units` too. WARNING: returned ids are transient — invalidated by ANY
+        mutation. Re-run find_entities after every modeling call; never cache
+        ids."""
         script = build_find_entities_script(
             entityType, createdByFeatureId or None, geometryType or None
         )
@@ -53,7 +55,17 @@ def register(mcp: FastMCP, get_client: Callable[[], OnshapeClient]) -> None:
             if radiusBetween
             else None
         )
-        return filter_entities(entities, near_m, radius_m, maxResults)
+        selected = filter_entities(entities, near_m, radius_m, maxResults)
+        scale = 1.0 / to_meters(1.0, units)
+        for entity in selected:
+            for key in ("radius",):
+                if entity.get(key) is not None:
+                    entity[key] = round(entity[key] * scale, 5)
+            for key in ("origin", "midpoint", "center"):
+                if entity.get(key) is not None:
+                    entity[key] = [round(v * scale, 5) for v in entity[key]]
+            entity["units"] = units
+        return selected
     @mcp.tool()
     def get_variables(
         documentId: str, workspaceId: str, elementId: str
