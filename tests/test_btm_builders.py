@@ -152,3 +152,179 @@ def test_units_helpers():
     assert length_expression("#wall_thk", "in") == "#wall_thk"
     with pytest.raises(ValueError):
         to_meters(1.0, "furlong")
+
+
+def _param_map(feature):
+    return {p["parameterId"]: p for p in feature["parameters"]}
+
+
+def test_revolve_full_uses_fullrevolve_not_legacy_enum():
+    feature = features.revolve(
+        "Rev", "Fsketch", params.deterministic_query(["JXX"])
+    )
+    assert feature["featureType"] == "revolve"
+    p = _param_map(feature)
+    # std >= 2856 spec: boolean fullRevolve, no legacy revolveType enum
+    assert p["fullRevolve"]["value"] is True
+    assert "revolveType" not in p
+    assert "angle" not in p
+    assert p["axis"]["queries"] == [
+        {"btType": "BTMIndividualQuery-138", "deterministicIds": ["JXX"]}
+    ]
+
+
+def test_revolve_partial_angle():
+    feature = features.revolve(
+        "Rev", "Fs", params.deterministic_query(["JXX"]), "ADD", "90 deg"
+    )
+    p = _param_map(feature)
+    assert p["fullRevolve"]["value"] is False
+    assert p["angle"]["expression"] == "90 deg"
+    assert p["endBound"] == {
+        "btType": "BTMParameterEnum-145",
+        "parameterId": "endBound",
+        "value": "BLIND",
+        "enumName": "RevolveBoundingType",
+    }
+    assert p["defaultScope"]["value"] is True  # non-NEW op merges with all
+
+
+def test_fillet_snapshot():
+    feature = features.fillet("Fillet", ["JAB", "JCD"], "0.1 in")
+    assert feature["featureType"] == "fillet"
+    p = _param_map(feature)
+    assert p["entities"]["queries"][0]["deterministicIds"] == ["JAB", "JCD"]
+    assert p["radius"]["expression"] == "0.1 in"
+    # API default is false (unlike the UI checkbox) -> always sent explicitly
+    assert p["tangentPropagation"]["value"] is True
+
+
+def test_chamfer_requires_type_param():
+    feature = features.chamfer("Chamfer", ["JAB"], "0.05 in")
+    p = _param_map(feature)
+    assert p["chamferType"]["value"] == "EQUAL_OFFSETS"
+    assert p["chamferType"]["enumName"] == "ChamferType"
+    assert p["width"]["expression"] == "0.05 in"
+
+
+def test_circular_pattern_part_snapshot():
+    feature = features.circular_pattern(
+        "Pat",
+        [params.bodies_created_by_query("Fseed")],
+        params.deterministic_query(["JAXIS"]),
+        4,
+    )
+    assert feature["featureType"] == "circularPattern"
+    p = _param_map(feature)
+    assert p["patternType"]["value"] == "PART"
+    assert p["instanceCount"] == {
+        "btType": "BTMParameterQuantity-147",
+        "parameterId": "instanceCount",
+        "isInteger": True,
+        "expression": "4",
+    }
+    assert p["angle"]["expression"] == "360 deg"
+    # exact id is equalSpace, NOT equalSpacing; API default false
+    assert p["equalSpace"]["value"] is True
+    assert 'qCreatedBy(makeId("Fseed"), EntityType.BODY)' in (
+        p["entities"]["queries"][0]["queryString"]
+    )
+
+
+def test_feature_pattern_uses_feature_list():
+    feature = features.feature_circular_pattern(
+        "Pat", ["Fhole"], params.deterministic_query(["JAXIS"]), 4
+    )
+    p = _param_map(feature)
+    assert p["patternType"]["value"] == "FEATURE"
+    assert p["instanceFunction"] == {
+        "btType": "BTMParameterFeatureList-1749",
+        "parameterId": "instanceFunction",
+        "featureIds": ["Fhole"],
+    }
+
+
+def test_linear_pattern_snapshot():
+    feature = features.linear_pattern(
+        "Pat",
+        [params.bodies_created_by_query("Fseed")],
+        params.default_plane_query("RIGHT"),
+        3,
+        "0.5 in",
+    )
+    p = _param_map(feature)
+    assert p["directionOne"]["queries"][0]["queryString"].startswith(
+        'query=qCreatedBy(makeId("Right")'
+    )
+    assert p["distance"]["expression"] == "0.5 in"
+    assert p["instanceCount"]["expression"] == "3"
+
+
+def test_boolean_subtraction_requires_targets():
+    with pytest.raises(ValueError, match="target"):
+        features.boolean_bodies("B", "SUBTRACTION", [params.bodies_created_by_query("F1")])
+    feature = features.boolean_bodies(
+        "B",
+        "SUBTRACTION",
+        [params.bodies_created_by_query("Ftool")],
+        [params.bodies_created_by_query("Fbase")],
+    )
+    p = _param_map(feature)
+    assert p["operationType"]["enumName"] == "BooleanOperationType"
+    assert "targets" in p
+
+
+def test_boolean_union_omits_targets():
+    feature = features.boolean_bodies(
+        "B", "UNION",
+        [params.bodies_created_by_query("F1"), params.bodies_created_by_query("F2")],
+    )
+    assert "targets" not in _param_map(feature)
+
+
+def test_offset_plane_snapshot():
+    feature = features.offset_plane(
+        "Plane", params.default_plane_query("TOP"), "0.236 in"
+    )
+    assert feature["featureType"] == "cPlane"
+    p = _param_map(feature)
+    assert p["cplaneType"]["value"] == "OFFSET"
+    assert p["cplaneType"]["enumName"] == "CPlaneType"
+    assert p["offset"]["expression"] == "0.236 in"
+
+
+def test_assign_variable_snapshot():
+    feature = features.assign_variable("wall_thk", "LENGTH", "0.25 in")
+    assert feature["featureType"] == "assignVariable"
+    assert feature["name"] == "#wall_thk"
+    p = _param_map(feature)
+    assert p["name"] == {
+        "btType": "BTMParameterString-149",
+        "parameterId": "name",
+        "value": "wall_thk",
+    }
+    assert p["variableType"]["enumName"] == "VariableType"
+    assert p["lengthValue"]["expression"] == "0.25 in"
+    with pytest.raises(ValueError):
+        features.assign_variable("x", "TEMPERATURE", "5")
+
+
+def test_find_entities_script_contains_filters():
+    from onshape_mcp.queries import build_find_entities_script, filter_entities
+
+    script = build_find_entities_script("EDGE", "FsketchId", "CIRCLE")
+    assert 'qCreatedBy(makeId("FsketchId"), EntityType.EDGE)' in script
+    assert "GeometryType.CIRCLE" in script
+    assert "evCurveDefinition" in script
+
+    with pytest.raises(ValueError):
+        build_find_entities_script("SOLID")
+
+    entities = [
+        {"id": "A", "radius": 0.5, "origin": [0, 0, 0]},
+        {"id": "B", "radius": 0.1, "origin": [1, 0, 0]},
+        {"id": "C", "origin": [2, 0, 0]},
+    ]
+    assert [e["id"] for e in filter_entities(entities, radius_between_m=(0.4, 0.6))] == ["A"]
+    nearest = filter_entities(entities, near_point_m=[2.0, 0.0, 0.0])
+    assert nearest[0]["id"] == "C"

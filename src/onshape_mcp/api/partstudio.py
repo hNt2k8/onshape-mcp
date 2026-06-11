@@ -106,6 +106,34 @@ def delete_feature(
     return {"deleted": feature_id, "featureStatus": data.get("featureState", {}).get("featureStatus") if isinstance(data, dict) else None}
 
 
+def get_variables(
+    client: OnshapeClient,
+    document_id: str,
+    workspace_id: str,
+    element_id: str,
+) -> list[dict[str, Any]]:
+    """All variables visible to an element (its own assignVariable features
+    plus referenced Variable Studios). Note the /variables/... URL root."""
+    data = client.request_json(
+        "GET",
+        f"/variables/d/{document_id}/w/{workspace_id}/e/{element_id}/variables",
+        params={"includeValuesAndReferencedVariables": "true"},
+    )
+    results = []
+    for table in data or []:
+        for variable in table.get("variables", []):
+            results.append(
+                {
+                    "name": variable.get("name"),
+                    "type": variable.get("type"),
+                    "expression": variable.get("expression"),
+                    "value": variable.get("value"),
+                    "description": variable.get("description"),
+                }
+            )
+    return results
+
+
 def eval_featurescript(
     client: OnshapeClient,
     document_id: str,

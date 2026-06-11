@@ -30,3 +30,10 @@ def length_expression(value: float | str, units: str) -> str:
     if isinstance(value, str):
         return value
     return f"{value} {UNIT_LABEL[check_units(units)]}"
+
+
+def angle_expression(value: float | str) -> str:
+    """Numbers are degrees; expression strings pass through untouched."""
+    if isinstance(value, str):
+        return value
+    return f"{value} deg"

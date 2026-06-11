@@ -13,6 +13,32 @@ def quantity(parameter_id: str, expression: str) -> dict[str, Any]:
     }
 
 
+def integer_quantity(parameter_id: str, value: int) -> dict[str, Any]:
+    return {
+        "btType": "BTMParameterQuantity-147",
+        "parameterId": parameter_id,
+        "isInteger": True,
+        "expression": str(int(value)),
+    }
+
+
+def string(parameter_id: str, value: str) -> dict[str, Any]:
+    return {
+        "btType": "BTMParameterString-149",
+        "parameterId": parameter_id,
+        "value": value,
+    }
+
+
+def feature_list(parameter_id: str, feature_ids: list[str]) -> dict[str, Any]:
+    """FeatureList parameter (FEATURE patterns reference features this way)."""
+    return {
+        "btType": "BTMParameterFeatureList-1749",
+        "parameterId": parameter_id,
+        "featureIds": feature_ids,
+    }
+
+
 def enum(parameter_id: str, value: str, enum_name: str) -> dict[str, Any]:
     return {
         "btType": "BTMParameterEnum-145",
@@ -64,3 +90,11 @@ def default_plane_query(name: str) -> dict[str, Any]:
     if title not in ("Top", "Front", "Right"):
         raise ValueError(f"default plane must be TOP, FRONT, or RIGHT, got {name!r}")
     return query_string(f'query=qCreatedBy(makeId("{title}"), EntityType.FACE);')
+
+
+def bodies_created_by_query(feature_id: str) -> dict[str, Any]:
+    """All BODIES a feature created — referenced by featureId, so it stays
+    valid across later mutations (unlike transient ids)."""
+    return query_string(
+        f'query=qCreatedBy(makeId("{feature_id}"), EntityType.BODY);'
+    )
