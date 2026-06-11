@@ -147,6 +147,46 @@ def test_eval_featurescript_unwraps_result(tmp_path):
     assert result == {"result": 42.0}
 
 
+def test_download_resigns_redirects_to_other_hosts(tmp_path):
+    seen = []
+
+    def handler(request):
+        seen.append(
+            (request.url.host, request.headers.get("authorization", ""))
+        )
+        if request.url.host == "cad.onshape.com":
+            return httpx.Response(
+                307, headers={"Location": "https://blob.example/signed/file?x=1"}
+            )
+        return httpx.Response(200, content=b"STLBYTES")
+
+    from onshape_mcp.api import export as export_api
+
+    with make_client(handler, tmp_path) as client:
+        data = export_api.download(client, "/partstudios/d/1/w/2/e/3/stl", {"mode": "binary"})
+
+    assert data == b"STLBYTES"
+    assert [host for host, _ in seen] == ["cad.onshape.com", "blob.example"]
+    # Both requests carried a FRESH HMAC signature (not a reused header).
+    sigs = [auth for _, auth in seen]
+    assert all(a.startswith("On ") for a in sigs)
+    assert sigs[0] != sigs[1]
+
+
+def test_download_gives_up_after_max_redirects(tmp_path):
+    def handler(request):
+        return httpx.Response(307, headers={"Location": "https://cad.onshape.com/loop"})
+
+    from onshape_mcp.api import export as export_api
+    from onshape_mcp.client import OnshapeApiError
+
+    import pytest
+
+    with make_client(handler, tmp_path) as client:
+        with pytest.raises(OnshapeApiError, match="redirect"):
+            export_api.download(client, "/loop", {})
+
+
 def test_server_registers_all_m1_tools():
     import asyncio
 

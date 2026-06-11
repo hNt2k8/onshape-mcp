@@ -10,7 +10,7 @@ from mcp.server.fastmcp import FastMCP
 
 from .client import OnshapeClient
 from .config import load_config
-from .tools import documents, modeling, query
+from .tools import documents, export, modeling, query
 
 mcp = FastMCP("onshape")
 
@@ -29,6 +29,7 @@ def get_client() -> OnshapeClient:
 documents.register(mcp, get_client)
 modeling.register(mcp, get_client)
 query.register(mcp, get_client)
+export.register(mcp, get_client)
 
 
 def run() -> None:
