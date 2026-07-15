@@ -39,6 +39,32 @@ def register(mcp: FastMCP, get_client: Callable[[], OnshapeClient]) -> None:
         )
 
     @mcp.tool()
+    def export_step(
+        documentId: str,
+        workspaceId: str,
+        elementId: str,
+        filePath: str,
+        partIds: list[str] | None = None,
+        stepVersion: str = api.DEFAULT_STEP_VERSION,
+    ) -> dict[str, Any]:
+        """Export a Part Studio (or selected partIds) as an editable STEP
+        B-rep solid. filePath must be an ABSOLUTE path. Unlike export_stl (a
+        mesh via one synchronous call), STEP uses OnShape's async translation
+        API and costs several quota calls (submit + poll + download). Prefer
+        this when the file is for CAD/prototyping rather than 3D-print.
+        stepVersion defaults to AP214 (widest compatibility); AP242 / AP203
+        also accepted."""
+        return api.export_step(
+            get_client(),
+            documentId,
+            workspaceId,
+            elementId,
+            filePath,
+            partIds,
+            stepVersion,
+        )
+
+    @mcp.tool()
     def mass_properties(
         documentId: str,
         workspaceId: str,

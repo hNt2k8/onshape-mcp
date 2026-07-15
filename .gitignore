@@ -16,3 +16,7 @@ build/
 
 # OS
 .DS_Store
+
+# Local operating-manual + memory layers (local-only; mirrors sibling repos)
+CLAUDE.md
+memory/

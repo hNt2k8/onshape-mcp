@@ -173,6 +173,66 @@ def test_download_resigns_redirects_to_other_hosts(tmp_path):
     assert sigs[0] != sigs[1]
 
 
+def test_export_step_runs_translation_flow_and_downloads(tmp_path):
+    from onshape_mcp.api import export as export_api
+
+    state = {"post_body": None, "polls": 0}
+
+    def handler(request):
+        path = request.url.path
+        if request.method == "POST" and path.endswith("/translations"):
+            state["post_body"] = json.loads(request.content)
+            return httpx.Response(200, json={"id": "t1", "requestState": "ACTIVE"})
+        if path == "/api/v10/translations/t1":
+            state["polls"] += 1
+            if state["polls"] < 2:  # exercise the ACTIVE -> DONE poll loop
+                return httpx.Response(200, json={"requestState": "ACTIVE"})
+            return httpx.Response(
+                200,
+                json={"requestState": "DONE", "resultExternalDataIds": ["ed1"]},
+            )
+        if path == "/api/v10/documents/d/d1/externaldata/ed1":
+            return httpx.Response(200, content=b"ISO-10303-21;\nHEADER;")
+        raise AssertionError(f"unexpected: {request.method} {path}")
+
+    out = tmp_path / "part.step"
+    with make_client(handler, tmp_path) as client:
+        result = export_api.export_step(
+            client, "d1", "w1", "e1", str(out), poll_interval_s=0.0
+        )
+
+    assert out.read_bytes().startswith(b"ISO-10303-21")
+    assert result == {
+        "filePath": str(out),
+        "bytes": len(b"ISO-10303-21;\nHEADER;"),
+        "format": "STEP",
+        "stepVersion": "AP214",
+    }
+    assert state["post_body"]["formatName"] == "STEP"
+    assert state["post_body"]["stepVersionString"] == "AP214"
+    assert state["polls"] == 2
+
+
+def test_export_step_raises_on_failed_translation(tmp_path):
+    import pytest
+
+    from onshape_mcp.api import export as export_api
+    from onshape_mcp.client import OnshapeApiError
+
+    def handler(request):
+        if request.method == "POST":
+            return httpx.Response(200, json={"id": "t1", "requestState": "ACTIVE"})
+        return httpx.Response(
+            200, json={"requestState": "FAILED", "failureReason": "boom"}
+        )
+
+    with make_client(handler, tmp_path) as client:
+        with pytest.raises(OnshapeApiError, match="FAILED"):
+            export_api.export_step(
+                client, "d1", "w1", "e1", str(tmp_path / "p.step"), poll_interval_s=0.0
+            )
+
+
 def test_download_gives_up_after_max_redirects(tmp_path):
     def handler(request):
         return httpx.Response(307, headers={"Location": "https://cad.onshape.com/loop"})
@@ -214,6 +274,7 @@ def test_server_registers_all_m1_tools():
         "get_variables",
         "find_entities",
         "export_stl",
+        "export_step",
         "mass_properties",
         "list_parts",
     }

@@ -8,6 +8,7 @@ signed request for the Location URL — never with the original auth header
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,13 @@ DEFAULT_ANGLE_TOLERANCE = 0.04  # radians
 DEFAULT_CHORD_TOLERANCE_IN = 0.0024  # inches (≈ 0.06 mm)
 
 MAX_REDIRECTS = 3
+
+# STEP export uses OnShape's ASYNC translation API (submit -> poll -> download),
+# unlike STL which has a synchronous endpoint. AP214 is the widest-compatibility
+# default; AP242 (richer PMI) and AP203 are also accepted.
+DEFAULT_STEP_VERSION = "AP214"
+TRANSLATION_POLL_INTERVAL_S = 2.0
+TRANSLATION_TIMEOUT_S = 300.0
 
 
 def download(client: OnshapeClient, path: str, params: dict[str, Any]) -> bytes:
@@ -84,6 +92,89 @@ def export_stl(
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(data)
     return {"filePath": str(target), "bytes": len(data), "units": units}
+
+
+def export_step(
+    client: OnshapeClient,
+    document_id: str,
+    workspace_id: str,
+    element_id: str,
+    file_path: str,
+    part_ids: list[str] | None = None,
+    step_version: str = DEFAULT_STEP_VERSION,
+    poll_interval_s: float = TRANSLATION_POLL_INTERVAL_S,
+    timeout_s: float = TRANSLATION_TIMEOUT_S,
+) -> dict[str, Any]:
+    """Export a Part Studio (or selected parts) as a STEP B-rep solid to
+    file_path (ABSOLUTE path).
+
+    STEP is an editable solid model, not a mesh, so unlike export_stl this
+    uses OnShape's asynchronous translation API: submit a job, poll until it
+    finishes, then download the result. That costs several quota calls instead
+    of one, but yields real geometry any CAD tool can edit.
+    """
+    target = Path(file_path)
+    if not target.is_absolute():
+        # Checked up front so a bad path can't waste translation quota.
+        raise OnshapeApiError(
+            f"file_path must be ABSOLUTE (server cwd != project cwd): {file_path}"
+        )
+
+    body: dict[str, Any] = {
+        "formatName": "STEP",
+        "stepVersionString": step_version,
+        "storeInDocument": False,
+        "flattenAssemblies": False,
+    }
+    if part_ids:
+        body["partIds"] = ",".join(part_ids)
+
+    job = client.request_json(
+        "POST",
+        f"/partstudios/d/{document_id}/w/{workspace_id}/e/{element_id}/translations",
+        json_body=body,
+    )
+    translation_id = job.get("id")
+    if not translation_id:
+        raise OnshapeApiError(f"translation submit returned no id: {job}")
+
+    # requestState goes ACTIVE -> DONE (or FAILED). Poll on a wall-clock deadline.
+    deadline = time.monotonic() + timeout_s
+    external_data_id: str | None = None
+    while True:
+        status = client.request_json("GET", f"/translations/{translation_id}")
+        state = status.get("requestState")
+        if state == "DONE":
+            ids = status.get("resultExternalDataIds") or []
+            if not ids:
+                raise OnshapeApiError(
+                    f"translation {translation_id} DONE with no result data"
+                )
+            external_data_id = ids[0]
+            break
+        if state == "FAILED":
+            raise OnshapeApiError(
+                f"translation {translation_id} FAILED: {status.get('failureReason')}"
+            )
+        if time.monotonic() > deadline:
+            raise OnshapeApiError(
+                f"translation {translation_id} still {state} after {timeout_s:.0f}s"
+            )
+        time.sleep(poll_interval_s)
+
+    # External data lives on the document; that GET may 307 to blob storage, so
+    # reuse the re-signed-redirect download helper (same path as STL).
+    data = download(
+        client, f"/documents/d/{document_id}/externaldata/{external_data_id}", {}
+    )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(data)
+    return {
+        "filePath": str(target),
+        "bytes": len(data),
+        "format": "STEP",
+        "stepVersion": step_version,
+    }
 
 
 def mass_properties(

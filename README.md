@@ -53,7 +53,8 @@ create_sketch + extrude REMOVE THROUGH_ALL                       [holes: skip na
 find_entities (EDGE, radiusBetween)      -> transient ids for fillet/chamfer
 fillet_or_chamfer (entityIds)            -> check featureStatus == OK after EVERY feature
 pattern / revolve / boolean_parts as needed
-export_stl (ABSOLUTE path)               -> compare_stl(candidate, reference)
+export_stl (ABSOLUTE path)               -> compare_stl(candidate, reference)  [mesh: 3D-print, verify]
+export_step (ABSOLUTE path)              -> editable STEP B-rep solid           [CAD/prototyping; async, +quota]
 ```
 
 **Iron rules**
