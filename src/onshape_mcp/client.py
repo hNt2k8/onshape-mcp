@@ -128,12 +128,23 @@ class OnshapeClient:
         *,
         params: dict[str, Any] | None = None,
         json_body: Any = None,
+        files: Any = None,
+        data: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
     ) -> httpx.Response:
         """Issue one signed request. `path` is relative to the API root
         (e.g. "/users/sessioninfo") or a full URL (used when re-signing a
         redirect Location). Returns the response without raising on HTTP
-        error status, except 402 (quota) which always raises."""
+        error status, except 402 (quota) which always raises.
+
+        `json_body` is serialized to a JSON string. For uploads, pass httpx
+        `files=` / `data=` instead: httpx then builds a multipart body and its
+        own Content-Type (with boundary), which _build_request signs verbatim.
+        `files` values must be in-memory bytes, not open file objects — a 429
+        retry rebuilds the request and would otherwise send an exhausted stream.
+        """
+        if json_body is not None and (files is not None or data is not None):
+            raise ValueError("pass json_body OR files/data, not both")
         method = method.upper()
         url = self._url_for(path, params)
         body = jsonlib.dumps(json_body) if json_body is not None else None
@@ -141,7 +152,7 @@ class OnshapeClient:
         attempt = 0
         while True:
             self._throttle()
-            request = self._build_request(method, url, body, headers)
+            request = self._build_request(method, url, body, headers, files, data)
             response = self._http.send(request)
             self._record_call(method, request.url, response.status_code)
 
@@ -202,15 +213,23 @@ class OnshapeClient:
         url: str,
         body: str | None,
         extra_headers: dict[str, str] | None,
+        files: Any = None,
+        data: dict[str, Any] | None = None,
     ) -> httpx.Request:
         # Build the request and apply caller headers first, then sign the exact
         # URL and effective Content-Type httpx will send, so the signature
         # always matches the wire bytes (incl. redirect re-signs and non-JSON
         # uploads). Auth headers go last: the client owns Date / On-Nonce /
         # Authorization / Content-Type.
-        request = self._http.build_request(
-            method, url, content=body, headers={"Accept": "application/json"}
-        )
+        build_kwargs: dict[str, Any] = {"headers": {"Accept": "application/json"}}
+        if files is not None or data is not None:
+            # httpx generates the multipart boundary here; it lands in the
+            # request's Content-Type below and is what actually gets signed.
+            build_kwargs["files"] = files
+            build_kwargs["data"] = data or {}
+        else:
+            build_kwargs["content"] = body
+        request = self._http.build_request(method, url, **build_kwargs)
         if extra_headers:
             request.headers.update(extra_headers)
         content_type = request.headers.get("Content-Type", CONTENT_TYPE)

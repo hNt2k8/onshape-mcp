@@ -25,11 +25,18 @@ def list_documents(
 
 
 def create_document(
-    client: OnshapeClient, name: str, description: str | None = None
+    client: OnshapeClient,
+    name: str,
+    description: str | None = None,
+    parent_id: str | None = None,
 ) -> dict[str, Any]:
+    """Create a private document. parent_id is an OnShape FOLDER id; when set,
+    the document is created inside that folder instead of at the root."""
     body: dict[str, Any] = {"name": name, "isPublic": False}
     if description:
         body["description"] = description
+    if parent_id:
+        body["parentId"] = parent_id
     doc = client.request_json("POST", "/documents", json_body=body)
     document_id = doc["id"]
     workspace_id = doc["defaultWorkspace"]["id"]

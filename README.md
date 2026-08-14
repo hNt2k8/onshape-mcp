@@ -45,7 +45,8 @@ session — approve when prompted.
 **Typical build flow**
 
 ```
-create_document                          -> documentId, workspaceId, partStudioElementId
+create_document (parentId = folder id)   -> documentId, workspaceId, partStudioElementId
+import_cad (ABSOLUTE path to .zip/STEP)  -> foreign CAD into an existing workspace [async, +quota]
 set_variable (optional, e.g. wall_thk)   -> use "#wall_thk" in later expressions
 create_sketch (plane {"default":"TOP"})  -> featureId            [one closed profile per sketch]
 extrude (sketchFeatureId, NEW, depth)    -> base solid

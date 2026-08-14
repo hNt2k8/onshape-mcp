@@ -18,11 +18,16 @@ def register(mcp: FastMCP, get_client: Callable[[], OnshapeClient]) -> None:
         return api.list_documents(get_client(), query or None, limit)
 
     @mcp.tool()
-    def create_document(name: str, description: str = "") -> dict[str, Any]:
+    def create_document(
+        name: str, description: str = "", parentId: str = ""
+    ) -> dict[str, Any]:
         """Create a new private OnShape document. Returns documentId,
         workspaceId, and the default Part Studio's partStudioElementId —
-        everything needed to start modeling."""
-        return api.create_document(get_client(), name, description or None)
+        everything needed to start modeling. parentId is an OnShape FOLDER id;
+        pass it to create the document inside that folder."""
+        return api.create_document(
+            get_client(), name, description or None, parentId or None
+        )
 
     @mcp.tool()
     def list_elements(documentId: str, workspaceId: str) -> list[dict[str, Any]]:

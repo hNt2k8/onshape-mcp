@@ -10,7 +10,7 @@ from mcp.server.fastmcp import FastMCP
 
 from .client import OnshapeClient
 from .config import load_config
-from .tools import documents, export, mesh, modeling, query
+from .tools import documents, export, imports, mesh, modeling, query
 
 mcp = FastMCP("onshape")
 
@@ -30,6 +30,7 @@ documents.register(mcp, get_client)
 modeling.register(mcp, get_client)
 query.register(mcp, get_client)
 export.register(mcp, get_client)
+imports.register(mcp, get_client)
 mesh.register(mcp, get_client)
 
 
