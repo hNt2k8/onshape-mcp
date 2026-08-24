@@ -17,25 +17,46 @@ uv run --no-editable onshape-mcp doctor   # auth smoke test against the live API
 > files — editable installs silently stop importing minutes after a sync.
 > Non-editable installs don't use `.pth` and are immune.
 
-API keys come from https://dev-portal.onshape.com/keys. Credentials live only
-in `~/.config/onshape-mcp/.env` — never in project folders.
+## Credentials
+
+API keys come from https://dev-portal.onshape.com/keys (an access key +
+secret key pair). Credentials live ONLY in `~/.config/onshape-mcp/.env`,
+created by `onshape-mcp setup` with permissions `600` (owner read/write
+only) — never in project folders, never committed, never printed. See
+[.env.example](.env.example) for the variable names; the process
+environment (`ONSHAPE_ACCESS_KEY` / `ONSHAPE_SECRET_KEY`) takes precedence
+over the file if both exist.
 
 ## Per-project registration
 
-From the CAD project folder where you want the server available:
+From the CAD project folder where you want the server available (replace
+`/path/to/onshape-mcp` with wherever you cloned this repo):
 
 ```bash
-~/Documents/Antigravity/CAD-MCP/install.sh
+/path/to/onshape-mcp/install.sh
 ```
 
 or equivalently:
 
 ```bash
 claude mcp add --scope project onshape -- \
-  uv run --quiet --no-editable --project ~/Documents/Antigravity/CAD-MCP onshape-mcp
+  uv run --quiet --no-editable --project /path/to/onshape-mcp onshape-mcp
 ```
 
-(`--project`, not `--directory`: the server resolves the CAD-MCP venv but keeps
+Or register it by hand in the project's `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "onshape": {
+      "command": "uv",
+      "args": ["run", "--quiet", "--no-editable", "--project", "/path/to/onshape-mcp", "onshape-mcp"]
+    }
+  }
+}
+```
+
+(`--project`, not `--directory`: the server resolves this repo's venv but keeps
 the caller's cwd. File-path tool params should be absolute paths regardless.)
 Project-scoped servers show "Pending approval" on the first interactive
 session — approve when prompted.
@@ -91,3 +112,7 @@ stderr. Monitor usage in OnShape under My Account → Developer.
 uv run --no-editable pytest          # offline tests (no API calls, no credentials needed)
 uv run --no-editable onshape-mcp doctor
 ```
+
+## License
+
+MIT — see [LICENSE](LICENSE).

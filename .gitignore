@@ -8,6 +8,8 @@ build/
 # Environments
 .venv/
 .env
+.env.*
+!.env.example
 
 # Tooling
 .pytest_cache/
@@ -21,8 +23,5 @@ build/
 CLAUDE.md
 memory/
 
-# graphify — regenerable / local-only artifacts
-graphify-out/cache/
-graphify-out/graph.html
-graphify-out/cost.json
-graphify-out/.graphify_python
+# graphify — regenerable / local-only artifacts (never committed)
+graphify-out/
